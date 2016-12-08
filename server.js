@@ -38,6 +38,7 @@ router.addRoute('GET /media', function (req, res, m) {
   function write (row, enc, next) {
     next(null, row.name + '\n')
   }
+  function end (next) { next() }
 })
 router.addRoute('GET /media/:file', function (req, res, m) {
   var r = archive.createFileReadStream(m.params.file)
@@ -51,34 +52,34 @@ router.addRoute('GET /media/:file', function (req, res, m) {
 })
 router.addRoute('POST /upload/jpg', function (req, res, m) {
   var r = pump(req, through())
+  var sent = false
   pump(req, jpeg(), through.obj(write, end), function (err) {
     if (err && err.message !== 'premature close') {
       res.statusCode = 500
       res.end(err + '\n')
     }
   })
-
   function write (marker, enc, next) {
     if (marker.type === 'EXIF') {
       var d = marker.exif.DateTimeOriginal || marker.image.ModifyDate
-      fromDate(d || new Date)
-    } else next()
+      if (!sent) fromDate(d || new Date)
+      sent = true
+    }
+    next()
   }
   function end () {
-    fromDate(new Date)
+    if (!sent) fromDate(new Date)
+    sent = true
   }
-
   function fromDate (date) {
     var hex = randombytes(4).toString('hex')
     var file = strftime('%F-%H.%M.%S', date) + '-' + hex + '.jpg'
-    console.log(file)
     var w = archive.createFileWriteStream(file, { live: false })
     w.on('error', function (err) {
       res.statusCode = 500
       res.end(err + '\n')
     })
     w.once('finish', function () { // doesn't work
-      console.log('FINISH')
       res.end(file + '\n')
     })
     r.pipe(w)
