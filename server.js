@@ -7,6 +7,7 @@ var jpeg = require('jpeg-marker-stream')
 var through = require('through2')
 var randombytes = require('randombytes')
 var mkdirp = require('mkdirp')
+var xtend = require('xtend')
 
 var level = require('level')
 var osmdb = require('osm-p2p')
@@ -24,8 +25,9 @@ var osm = osmdb(osmdir)
 var obs = osmobs({ db: obsdb, log: osm.log })
 var archive = require('./lib/drive.js')(drivedb, { dir: mediadir })
 
+var body = require('body/any')
 var router = require('routes')()
-router.addRoute('GET /media', function (req, res, m) {
+router.addRoute('GET /media/list', function (req, res, m) {
   res.setHeader('content-type', 'text/plain')
   pump(archive.list({ live: false }),
     through.obj(write), res, done)
@@ -50,7 +52,7 @@ router.addRoute('GET /media/:file', function (req, res, m) {
   res.setHeader('content-type', mime.lookup(m.params.file))
   r.pipe(res)
 })
-router.addRoute('POST /upload/jpg', function (req, res, m) {
+router.addRoute('POST /media/jpg', function (req, res, m) {
   var r = pump(req, through())
   var sent = false
   pump(req, jpeg(), through.obj(write, end), function (err) {
@@ -83,6 +85,52 @@ router.addRoute('POST /upload/jpg', function (req, res, m) {
       res.end(file + '\n')
     })
     r.pipe(w)
+  }
+})
+router.addRoute('POST /obs/create', function (req, res, m) {
+  body(req, res, function (err, doc) {
+    if (err) {
+      res.statusCode = 400
+      return res.end(err + '\n')
+    } else if (!doc || !/^observation(|-link)$/.test(doc.type)) {
+      res.statusCode = 400
+      return res.end('type must be observation or observation-link\n')
+    }
+    osm.create(doc, function (err, key, node) {
+      if (err) {
+        res.statusCode = 500
+        res.end(err + '\n')
+      } else {
+        res.end(key + '\n')
+      }
+    })
+  })
+})
+router.addRoute('GET /obs/links/:id', function (req, res, m) {
+  pump(obs.links(m.params.id), through.obj(write), res, done)
+  function write (row, enc, next) {
+    next(null, JSON.stringify(row) + '\n')
+  }
+  function done (err) {
+    if (err) {
+      res.statusCode = 500
+      res.end(err + '\n')
+    }
+  }
+})
+router.addRoute('GET /obs/list', function (req, res, m) {
+  pump(osm.log.createReadStream(), through.obj(write), res, done)
+  function write (row, enc, next) {
+    var v = row.value && row.value.v || {}
+    if (v.type === 'observation') {
+      next(null, JSON.stringify(xtend({ id: row.value.k }, v)) + '\n')
+    } else next()
+  }
+  function done (err) {
+    if (err) {
+      res.statusCode = 500
+      res.end(err + '\n')
+    }
   }
 })
 
