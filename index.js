@@ -42,12 +42,13 @@ router.addRoute('GET /media/:file', function (req, res, m) {
 router.addRoute('POST /media/jpg', function (req, res, m) {
   var r = pump(req, through())
   var sent = false
-  pump(req, jpeg(), through.obj(write, end), function (err) {
-    if (err && err.message !== 'premature close') {
-      res.statusCode = 500
-      res.end(err + '\n')
-    }
+  var j = jpeg()
+  j.on('error', function (err) {
+    // parsing didn't work, use current time
+    end()
   })
+  req.pipe(j).pipe(through.obj(write, end))
+
   function write (marker, enc, next) {
     if (marker.type === 'EXIF') {
       var d = marker.exif.DateTimeOriginal || marker.image.ModifyDate
