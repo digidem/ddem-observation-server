@@ -11,6 +11,7 @@ var osmobs = require('osm-p2p-observations')
 var mime = require('mime')
 var pump = require('pump')
 var drive = require('./lib/drive.js')
+var symgroup = require('symmetric-protocol-group')
 var body = require('body/any')
 
 var router = require('routes')()
@@ -121,18 +122,74 @@ router.addRoute('GET /obs/list', function (req, res, m) {
     }
   }
 })
+router.addRoute('POST /replicate', function (req, res, m) {
+  var sent = false
+  body(req, res, function (err, params) {
+    if (err) return error(err)
+    if (!params.dir) return error('dir not given')
+    var dst = create(params.dir)
+    var pending = 2
+    var a = rep(m, done)
+    var b = rep(dst, done)
+    a.pipe(b).pipe(a)
+    function done () {
+      console.log('done', pending)
+      if (--pending === 0) res.end('ok\n')
+    }
+  })
+  function rep (x, cb) {
+    var archive = x.archive.replicate({ live: false })
+    var log = x.osm.log.replicate({ live: false })
+    x.archive.metadata.on('download-finished', function () {
+      console.log('DOWNLOAD FINISHED')
+      archive.emit('end')
+    })
+    /*
+    x.archive.metadata.on('download-finished', function () {
+      console.log('FINISHED DOWNLOAD')
+      x.archive.list(function (err, entries) {
+        console.log('LIST', err, entries)
+        if (err) return error(err)
+        var pending = entries.length
+        entries.forEach(function (entry) {
+          console.log('ENTRY=', entry)
+          x.archive.download(entry, function (err) {
+            if (err) return error(err)
+            console.log('PENDING=', pending)
+            if (--pending === 0) archive.end()
+          })
+        })
+      })
+    })
+    */
+    return symgroup({
+      archive: archive,
+      log: log
+    }, cb)
+  }
+  function error (err) {
+    if (sent) return
+    sent = true
+    res.statusCode = 500
+    res.end(err + '\n')
+  }
+})
 
-module.exports = function (osmdir) {
-  var mediadir = path.join(osmdir, 'media')
+function create (dir) {
+  var osm = osmdb(dir)
+  var mediadir = path.join(dir, 'media')
   mkdirp.sync(mediadir)
-  var obsdb = level(path.join(osmdir, 'obsdb'))
-  var drivedb = level(path.join(osmdir, 'drivedb'))
-  var osm = osmdb(osmdir)
-  var h = {
+  var obsdb = level(path.join(dir, 'obsdb'))
+  var drivedb = level(path.join(dir, 'drivedb'))
+  return {
     osm: osm,
     archive: drive(drivedb, { dir: mediadir }),
     obs: osmobs({ db: obsdb, log: osm.log })
   }
+}
+
+module.exports = function (dir) {
+  var h = create(dir)
   return function (req, res) {
     console.log(req.method, req.url)
     var m = router.match(req.method + ' ' + req.url)
