@@ -27,7 +27,6 @@ router.addRoute('GET /media/list', function (req, res, m) {
   function write (row, enc, next) {
     next(null, row.name + '\n')
   }
-  function end (next) { next() }
 })
 router.addRoute('GET /media/:file', function (req, res, m) {
   var r = m.archive.createFileReadStream(m.params.file)
