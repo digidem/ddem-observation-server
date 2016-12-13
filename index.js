@@ -154,7 +154,7 @@ module.exports = function (osmdir) {
     archive: drive(drivedb, { dir: mediadir }),
     obs: osmobs({ db: obsdb, log: osm.log })
   }
-  return function (req, res) {
+  var handler = function (req, res) {
     console.log(req.method, req.url)
     var m = router.match(req.method + ' ' + req.url)
     if (m) m.fn(req, res, xtend({ params: m.params }, h))
@@ -163,4 +163,6 @@ module.exports = function (osmdir) {
       res.end('not found\n')
     }
   }
+  handler.log = osm.log
+  return handler
 }
