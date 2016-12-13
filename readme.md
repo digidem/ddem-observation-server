@@ -33,3 +33,6 @@ Return a newline-separated list of ids which link to the provided `:id`..
 Return a newline-separated list of JSON documents for each observation in the
 database.
 
+# data
+
+Data is stored in `path.join(require('ospath').data(), 'mapfilter-osm-p2p')`.
