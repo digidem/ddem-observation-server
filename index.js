@@ -12,6 +12,7 @@ var mime = require('mime')
 var pump = require('pump')
 var drive = require('./lib/drive.js')
 var body = require('body/any')
+var identify = require('./identify-image-stream')
 
 var router = require('routes')()
 router.addRoute('GET /media/list', function (req, res, m) {
@@ -27,7 +28,6 @@ router.addRoute('GET /media/list', function (req, res, m) {
   function write (row, enc, next) {
     next(null, row.name + '\n')
   }
-  function end (next) { next() }
 })
 router.addRoute('GET /media/:file', function (req, res, m) {
   var r = m.archive.createFileReadStream(m.params.file)
@@ -39,31 +39,29 @@ router.addRoute('GET /media/:file', function (req, res, m) {
   res.setHeader('content-type', mime.lookup(m.params.file))
   r.pipe(res)
 })
-router.addRoute('POST /media/jpg', function (req, res, m) {
-  var r = pump(req, through())
-  var sent = false
-  var j = jpeg()
-  j.on('error', function (err) {
-    // parsing didn't work, use current time
-    end()
-  })
-  req.pipe(j).pipe(through.obj(write, end))
 
-  function write (marker, enc, next) {
-    if (marker.type === 'EXIF') {
-      var d = marker.exif.DateTimeOriginal || marker.image.ModifyDate
-      if (!sent) fromDate(d || new Date)
-      sent = true
+router.addRoute('POST /media/create', function (req, res, m) {
+  var r = pump(req, through())
+  identify(req, function (err, type) {
+    if (err) {
+      res.statusCode = 500
+      res.end(err + '\n')
+    } else {
+      onTypeKnown(type)
     }
-    next()
+  })
+
+  function onTypeKnown (type) {
+    if (type === 'jpg' || type === 'jpeg') {
+      handleJpeg()
+    } else {
+      writeImage(type, new Date())
+    }
   }
-  function end () {
-    if (!sent) fromDate(new Date)
-    sent = true
-  }
-  function fromDate (date) {
+
+  function writeImage (ext, date) {
     var hex = randombytes(4).toString('hex')
-    var file = strftime('%F-%H.%M.%S', date) + '-' + hex + '.jpg'
+    var file = strftime('%F-%H.%M.%S', date) + '-' + hex + '.' + ext
     var w = m.archive.createFileWriteStream(file, { live: false })
     w.on('error', function (err) {
       res.statusCode = 500
@@ -73,6 +71,29 @@ router.addRoute('POST /media/jpg', function (req, res, m) {
       res.end(file + '\n')
     })
     r.pipe(w)
+  }
+
+  function handleJpeg () {
+    var j = jpeg()
+    j.on('error', function () {
+      // parsing didn't work, use current time
+      end()
+    })
+    req.pipe(j).pipe(through.obj(write, end))
+
+    var exifFound = false
+
+    function write (marker, enc, next) {
+      if (marker.type === 'EXIF') {
+        var date = marker.exif.DateTimeOriginal || marker.image.ModifyDate
+        if (!exifFound && date) writeImage('jpg', date)
+        exifFound = true
+      }
+      next()
+    }
+    function end () {
+      if (!exifFound) writeImage('jpg', new Date())
+    }
   }
 })
 router.addRoute('POST /obs/create', function (req, res, m) {

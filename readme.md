@@ -10,9 +10,9 @@ Return a newline-separated list of media filenames.
 
 Return the contents of a particular file.
 
-## POST /media/jpg
+## POST /media/create
 
-Upload a jpeg file. The contents of upload should be the image data itself.
+Upload an image or video file. The contents of upload should be the media data itself.
 
 ## POST /obs/create
 
