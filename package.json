@@ -1,4 +1,15 @@
 {
+  "name": "ddem-observation-server",
+  "description": "",
+  "version": "0.0.0",
+  "repository": {
+    "url": "git://github.com/digidem/ddem-observation-server.git"
+  },
+  "homepage": "https://github.com/digidem/ddem-observation-server",
+  "bugs": "https://github.com/digidem/ddem-observation-server/issues",
+  "main": "index.js",
+  "keywords": [
+  ],
   "devDependencies": {
     "level": "^1.5.0",
     "osm-p2p": "^1.4.0"
@@ -22,5 +33,6 @@
     "strftime": "^0.9.2",
     "through2": "^2.0.3",
     "xtend": "^4.0.1"
-  }
+  },
+  "license": "ISC"
 }
