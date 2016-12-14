@@ -5,6 +5,7 @@
   },
   "dependencies": {
     "body": "^5.1.0",
+    "corsify": "^2.1.0",
     "end-of-stream": "^1.1.0",
     "hyperdrive": "^7.8.0",
     "hyperdrive-named-archives": "^1.2.0",
