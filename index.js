@@ -139,7 +139,24 @@ router.addRoute('POST /replicate', function (req, res, m) {
     }
   })
   function rep (x, cb) {
-    var archive = x.archive.replicate({ live: false })
+    var archive = x.archive.replicate()
+    setTimeout(function () {
+      console.log('BEGIN')
+      x.archive.list({ live: false }, function (err, entries) {
+        var pending = entries.length
+        entries.forEach(function (entry) {
+          x.archive.download(entry, function (err) {
+            console.log('P', pending)
+            if (--pending === 0) done()
+          })
+        })
+        console.log('E', entries)
+      })
+      function done () {
+        x.archive.close()
+        archive.emit('end')
+      }
+    }, 2000)
     var log = x.osm.log.replicate({ live: false })
     return symgroup({
       archive: archive,
