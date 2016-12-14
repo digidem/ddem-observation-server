@@ -30,14 +30,15 @@ router.addRoute('GET /media/list', function (req, res, m) {
   }
   function end (next) { next() }
 })
-router.addRoute('GET /media/:file', function (req, res, m) {
-  var r = m.archive.createFileReadStream(m.params.file)
+router.addRoute('GET /media/:link/:name', function (req, res, m) {
+  var entry = { link: m.params.link, name: m.params.name }
+  var r = m.archive.createFileReadStream(entry)
   r.once('error', function (err) {
     res.setHeader('content-type', 'text/plain')
     res.statusCode = 404
     res.end(err + '\n')
   })
-  res.setHeader('content-type', mime.lookup(m.params.file))
+  res.setHeader('content-type', mime.lookup(m.params.name))
   r.pipe(res)
 })
 router.addRoute('POST /media/jpg', function (req, res, m) {
@@ -71,7 +72,7 @@ router.addRoute('POST /media/jpg', function (req, res, m) {
       res.end(err + '\n')
     })
     w.once('finish', function () { // doesn't work
-      res.end(file + '\n')
+      res.end(m.archive.key.toString('hex') + '/' + file + '\n')
     })
     r.pipe(w)
   }
@@ -140,28 +141,6 @@ router.addRoute('POST /replicate', function (req, res, m) {
   function rep (x, cb) {
     var archive = x.archive.replicate({ live: false })
     var log = x.osm.log.replicate({ live: false })
-    x.archive.metadata.on('download-finished', function () {
-      console.log('DOWNLOAD FINISHED')
-      archive.emit('end')
-    })
-    /*
-    x.archive.metadata.on('download-finished', function () {
-      console.log('FINISHED DOWNLOAD')
-      x.archive.list(function (err, entries) {
-        console.log('LIST', err, entries)
-        if (err) return error(err)
-        var pending = entries.length
-        entries.forEach(function (entry) {
-          console.log('ENTRY=', entry)
-          x.archive.download(entry, function (err) {
-            if (err) return error(err)
-            console.log('PENDING=', pending)
-            if (--pending === 0) archive.end()
-          })
-        })
-      })
-    })
-    */
     return symgroup({
       archive: archive,
       log: log
