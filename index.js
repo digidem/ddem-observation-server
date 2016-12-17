@@ -1,6 +1,5 @@
 var path = require('path')
 var strftime = require('strftime')
-var jpeg = require('jpeg-marker-stream')
 var through = require('through2')
 var randombytes = require('randombytes')
 var mkdirp = require('mkdirp')
@@ -12,7 +11,7 @@ var mime = require('mime')
 var pump = require('pump')
 var drive = require('./lib/drive.js')
 var body = require('body/any')
-var identify = require('./identify-image-stream')
+var typeDetector = require('./identify-image-stream')
 
 var router = require('routes')()
 router.addRoute('GET /media/list', function (req, res, m) {
@@ -41,59 +40,72 @@ router.addRoute('GET /media/:file', function (req, res, m) {
 })
 
 router.addRoute('POST /media/create', function (req, res, m) {
-  var r = pump(req, through())
-  identify(req, function (err, type) {
-    if (err) {
-      res.statusCode = 500
-      res.end(err + '\n')
-    } else {
-      onTypeKnown(type)
+  // shared state between parser + writer
+  var file
+  var error
+  var dst
+  var bufferedChunks = []
+
+  var writeStream = through(function (chunk, enc, next) {
+    if (file == null && error == null) {
+      bufferedChunks.push(chunk)
+      return next()
     }
+
+    if (file != null && dst == null) {
+      dst = m.archive.createFileWriteStream(file, { live: false })
+      this.pipe(dst)
+
+      bufferedChunks.forEach(function (x) {
+        this.push(x)
+      }, this)
+      bufferedChunks = null
+    }
+
+    next(error, chunk)
+  })
+  var parseStream = typeDetector()
+
+  // buffer request so that it can be sent to an appropriate stream once one is determined
+  // pipe the request into 2 streams:
+  // 1) writeStream - custom stream that will block / queue until a filename has been set
+  // 2) a chain of metadata streams that determine the input type and extract dates if available
+  // Note: these are not connected using pump(), as all parsing errors would cause the
+  // writeStream to error out (e.g. unknown code), resulting in canceled / partial writes
+
+  req.pipe(writeStream)
+  req.pipe(parseStream).pipe(through.obj((marker, enc, next) => {
+    if (marker.type === 'EXIF') {
+      var date = marker.exif.DateTimeOriginal || marker.image.ModifyDate
+      if (date) file = getFilename('jpg', date)
+    }
+    next()
+  }, () => {
+    file = file || getFilename('jpg')
+  }))
+
+  writeStream.on('error', (err) => {
+    res.statusCode = 500
+    res.end(err + '\n')
   })
 
-  function onTypeKnown (type) {
-    if (type === 'jpg' || type === 'jpeg') {
-      handleJpeg()
-    } else {
-      writeImage(type, new Date())
-    }
-  }
+  writeStream.on('finish', () => {
+    res.end(file + '\n')
+  })
 
-  function writeImage (ext, date) {
+  parseStream.on('error', err => {
+    if (err.message.startsWith('unknown code')) {
+      return
+    }
+
+    // propagate the error to bufferedStream (to prevent writes / abort)
+    error = err
+  })
+
+  function getFilename (ext, date) {
+    date = date || new Date()
     var hex = randombytes(4).toString('hex')
-    var file = strftime('%F-%H.%M.%S', date) + '-' + hex + '.' + ext
-    var w = m.archive.createFileWriteStream(file, { live: false })
-    w.on('error', function (err) {
-      res.statusCode = 500
-      res.end(err + '\n')
-    })
-    w.once('finish', function () { // doesn't work
-      res.end(file + '\n')
-    })
-    r.pipe(w)
-  }
-
-  function handleJpeg () {
-    var j = jpeg()
-    j.on('error', function () {
-      // parsing didn't work, use current time
-      end()
-    })
-    req.pipe(j).pipe(through.obj(write, end))
-
-    var exifFound = false
-
-    function write (marker, enc, next) {
-      if (marker.type === 'EXIF') {
-        var date = marker.exif.DateTimeOriginal || marker.image.ModifyDate
-        if (!exifFound && date) writeImage('jpg', date)
-        exifFound = true
-      }
-      next()
-    }
-    function end () {
-      if (!exifFound) writeImage('jpg', new Date())
-    }
+    return strftime('%F-%H.%M.%S', date) + '-' + hex + '.' + ext
   }
 })
 router.addRoute('POST /obs/create', function (req, res, m) {
