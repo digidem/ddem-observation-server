@@ -90,7 +90,7 @@ router.addRoute('POST /media/create', function (req, res, m) {
   })
 
   writeStream.on('finish', () => {
-    res.end(file + '\n')
+    res.end(file)
   })
 
   parseStream.on('error', err => {
